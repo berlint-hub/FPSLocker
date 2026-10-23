@@ -885,7 +885,7 @@ public:
 
 		if (entry_mode == ApmPerformanceMode_Normal && !displaySync.ds.handheld) {
 			auto *clickableListItem = new tsl::elm::ListItem2(getStringID(Lang::Id_IncreaseRefreshRate)); //Increase refresh rate
-			clickableListItem->setClickListener([](u64 keys) { 
+			clickableListItem->setClickListener([this](u64 keys) { 
 				if (keys & HidNpadButton_A) {
 					const uint8_t minRefreshRate = isOLED ? supportedHandheldRefreshRatesOLED[0] : supportedHandheldRefreshRates[0];
 					const uint8_t maxRefreshRate = isOLED ? supportedHandheldRefreshRatesOLED[sizeof(supportedHandheldRefreshRatesOLED)-1] : supportedHandheldRefreshRates[sizeof(supportedHandheldRefreshRates)-1];
@@ -917,7 +917,7 @@ public:
 			list->addItem(clickableListItem);
 
 			auto *clickableListItem2 = new tsl::elm::ListItem2(getStringID(Lang::Id_DecreaseRefreshRate)); //Decrease refresh rate
-			clickableListItem2->setClickListener([](u64 keys) { 
+			clickableListItem2->setClickListener([this](u64 keys) { 
 				if (keys & HidNpadButton_A) {
 					const uint8_t minRefreshRate = isOLED ? supportedHandheldRefreshRatesOLED[0] : supportedHandheldRefreshRates[0];
 					if (refreshRate_g > minRefreshRate) {
