@@ -69,13 +69,15 @@ jobs:
 
       - name: Build FPSLocker.ovl
         run: |
-          set -uo pipefail
-          if ! make -j"$(nproc)" 2>&1 | tee /tmp/build.log; then
-            tail -n 30 /tmp/build.log | while IFS= read -r line; do
-              [ -n "$line" ] && echo "::error::$line"
-            done
+          set -eu
+          export PATH="$PORTLIBS/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
+          if ! make -j"$(nproc)" >/tmp/build.log 2>&1; then
+            cat /tmp/build.log
+            summary=$(tail -n 15 /tmp/build.log | tr '\r\n' '  ' | cut -c1-800)
+            echo "::error::Build failed: $summary"
             exit 1
           fi
+          cat /tmp/build.log
 
       - name: Verify and package
         run: |
