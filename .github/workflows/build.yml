@@ -1,0 +1,108 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEVKITPRO: /opt/devkitpro
+  PORTLIBS: /opt/devkitpro/portlibs/switch
+
+jobs:
+  switch:
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/devkitpro/devkita64:latest
+      options: --user root
+    steps:
+      - name: Host tools
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq || echo "::warning::apt-get update failed"
+          apt-get install -y --no-install-recommends \
+            make git ca-certificates zip || echo "::warning::some apt packages failed"
+
+      - uses: actions/checkout@v4
+
+      - name: Switch toolchain and portlibs
+        run: |
+          set -eu
+          say() { echo "::notice::$1"; }
+
+          export PATH="$PORTLIBS/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
+          echo "$PORTLIBS/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/tools/bin" >> "$GITHUB_PATH"
+          echo "$DEVKITPRO/devkitA64/bin" >> "$GITHUB_PATH"
+
+          if [ ! -x "$PORTLIBS/bin/curl-config" ] || [ ! -f "$PORTLIBS/lib/libcurl.a" ] || [ ! -f "$PORTLIBS/lib/libz.a" ]; then
+            PM=$(command -v dkp-pacman || command -v pacman)
+            say "Installing switch-curl and switch-zlib via $PM"
+            "$PM" -S --needed --noconfirm --disable-download-timeout switch-curl switch-zlib \
+              || "$PM" -Sy --needed --noconfirm --disable-download-timeout switch-curl switch-zlib
+          fi
+
+          for f in "$DEVKITPRO/libnx/switch_rules" \
+                   "$DEVKITPRO/libnx/switch.specs" \
+                   "$DEVKITPRO/libnx/switch.ld" \
+                   "$DEVKITPRO/libnx/lib/libnx.a" \
+                   "$DEVKITPRO/devkitA64/base_rules" \
+                   "$PORTLIBS/bin/curl-config" \
+                   "$PORTLIBS/lib/libcurl.a"; do
+            [ -e "$f" ] || { echo "::error::missing $f"; exit 1; }
+          done
+
+          for t in aarch64-none-elf-g++ elf2nro nacptool make curl-config; do
+            command -v "$t" >/dev/null || { echo "::error::missing tool $t"; exit 1; }
+          done
+
+          say "g++: $(aarch64-none-elf-g++ --version | head -1)"
+          say "curl-config: $(command -v curl-config) -> $(curl-config --libs)"
+
+      - name: Build FPSLocker.ovl
+        run: |
+          set -uo pipefail
+          if ! make -j"$(nproc)" 2>&1 | tee /tmp/build.log; then
+            tail -n 30 /tmp/build.log | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::$line"
+            done
+            exit 1
+          fi
+
+      - name: Verify and package
+        run: |
+          set -eu
+          say() { echo "::notice::$1"; }
+
+          [ -f FPSLocker.ovl ] || { echo "::error::FPSLocker.ovl was not produced"; exit 1; }
+          magic=$(dd if=FPSLocker.ovl bs=1 skip=16 count=4 2>/dev/null || true)
+          [ "$magic" = "NRO0" ] || { echo "::error::Unexpected header magic '$magic' in FPSLocker.ovl"; exit 1; }
+
+          ver=$(sed -n 's/^APP_VERSION[[:space:]]*:=[[:space:]]*//p' Makefile | tr -d '[:space:]')
+          [ -n "$ver" ] || ver="custom"
+
+          mkdir -p artifact sdcard_out/switch/.overlays
+          cp FPSLocker.ovl artifact/FPSLocker.ovl
+          cp FPSLocker.ovl sdcard_out/switch/.overlays/FPSLocker.ovl
+          (cd sdcard_out && zip -qr "../artifact/FPSLocker-${ver}-sdcard.zip" .)
+
+          ovl_size=$(stat -c%s artifact/FPSLocker.ovl)
+          ovl_sha=$(sha256sum artifact/FPSLocker.ovl | cut -d' ' -f1)
+          zip_sha=$(sha256sum "artifact/FPSLocker-${ver}-sdcard.zip" | cut -d' ' -f1)
+          say "FPSLocker.ovl (${ver}): ${ovl_size} B, sha256=${ovl_sha}"
+          say "FPSLocker-${ver}-sdcard.zip: sha256=${zip_sha}"
+          ls -la artifact
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FPSLocker-build
+          path: artifact/
+          if-no-files-found: error

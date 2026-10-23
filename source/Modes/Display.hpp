@@ -885,14 +885,28 @@ public:
 
 		if (entry_mode == ApmPerformanceMode_Normal && !displaySync.ds.handheld) {
 			auto *clickableListItem = new tsl::elm::ListItem2(getStringID(Lang::Id_IncreaseRefreshRate)); //Increase refresh rate
-			clickableListItem->setClickListener([this](u64 keys) { 
+			clickableListItem->setClickListener([](u64 keys) { 
 				if (keys & HidNpadButton_A) {
-					if ((refreshRate_g >= (isOLED ? supportedHandheldRefreshRatesOLED[0] : supportedHandheldRefreshRates[0])) && (refreshRate_g < (isOLED ? supportedHandheldRefreshRatesOLED[sizeof(supportedHandheldRefreshRatesOLED)-1] : supportedHandheldRefreshRates[sizeof(supportedHandheldRefreshRates)-1]))) {
+					const uint8_t minRefreshRate = isOLED ? supportedHandheldRefreshRatesOLED[0] : supportedHandheldRefreshRates[0];
+					const uint8_t maxRefreshRate = isOLED ? supportedHandheldRefreshRatesOLED[sizeof(supportedHandheldRefreshRatesOLED)-1] : supportedHandheldRefreshRates[sizeof(supportedHandheldRefreshRates)-1];
+					if ((refreshRate_g >= minRefreshRate) && (refreshRate_g < maxRefreshRate)) {
 						if (R_SUCCEEDED(SaltySD_Connect())) {
-							refreshRate_g += 5;
-							SaltySD_SetDisplayRefreshRate(refreshRate_g);
+							uint8_t nextRefreshRate = RetroRemakeMode ? (uint8_t)(((refreshRate_g / 5) + 1) * 5) : (uint8_t)(refreshRate_g + 1);
+							if (nextRefreshRate > maxRefreshRate) nextRefreshRate = maxRefreshRate;
+							Result rc = SaltySD_SetDisplayRefreshRate(nextRefreshRate);
+							if (R_FAILED(rc) && !RetroRemakeMode) {
+								uint8_t fallbackRefreshRate = (uint8_t)(((refreshRate_g / 5) + 1) * 5);
+								if (fallbackRefreshRate <= maxRefreshRate) {
+									nextRefreshRate = fallbackRefreshRate;
+									rc = SaltySD_SetDisplayRefreshRate(nextRefreshRate);
+								}
+							}
 							SaltySD_Term();
-							if (Shared) Shared->displaySync.ds.handheld = refreshRate_g != 0;
+							if (R_SUCCEEDED(rc)) {
+								refreshRate_g = nextRefreshRate;
+								if (refreshRate_shared) *refreshRate_shared = refreshRate_g;
+								if (Shared) Shared->displaySync.ds.handheld = refreshRate_g != 0;
+							}
 						}
 					}
 					return true;
@@ -903,14 +917,27 @@ public:
 			list->addItem(clickableListItem);
 
 			auto *clickableListItem2 = new tsl::elm::ListItem2(getStringID(Lang::Id_DecreaseRefreshRate)); //Decrease refresh rate
-			clickableListItem2->setClickListener([this](u64 keys) { 
+			clickableListItem2->setClickListener([](u64 keys) { 
 				if (keys & HidNpadButton_A) {
-					if (refreshRate_g > (isOLED ? supportedHandheldRefreshRatesOLED[0] : supportedHandheldRefreshRates[0])) {
+					const uint8_t minRefreshRate = isOLED ? supportedHandheldRefreshRatesOLED[0] : supportedHandheldRefreshRates[0];
+					if (refreshRate_g > minRefreshRate) {
 						if (R_SUCCEEDED(SaltySD_Connect())) {
-							refreshRate_g -= 5;
-							SaltySD_SetDisplayRefreshRate(refreshRate_g);
-							if (Shared) Shared->displaySync.ds.handheld = refreshRate_g != 0;
+							uint8_t nextRefreshRate = RetroRemakeMode ? (uint8_t)(((refreshRate_g - 1) / 5) * 5) : (uint8_t)(refreshRate_g - 1);
+							if (nextRefreshRate < minRefreshRate) nextRefreshRate = minRefreshRate;
+							Result rc = SaltySD_SetDisplayRefreshRate(nextRefreshRate);
+							if (R_FAILED(rc) && !RetroRemakeMode) {
+								uint8_t fallbackRefreshRate = (uint8_t)(((refreshRate_g - 1) / 5) * 5);
+								if (fallbackRefreshRate >= minRefreshRate) {
+									nextRefreshRate = fallbackRefreshRate;
+									rc = SaltySD_SetDisplayRefreshRate(nextRefreshRate);
+								}
+							}
 							SaltySD_Term();
+							if (R_SUCCEEDED(rc)) {
+								refreshRate_g = nextRefreshRate;
+								if (refreshRate_shared) *refreshRate_shared = refreshRate_g;
+								if (Shared) Shared->displaySync.ds.handheld = refreshRate_g != 0;
+							}
 						}
 					}
 					return true;
@@ -1073,7 +1100,7 @@ public:
     }
 
 	virtual void update() override {
-		refreshRate_g = *refreshRate_shared;
+		if (refreshRate_shared) refreshRate_g = *refreshRate_shared;
 		snprintf(refreshRate_c, sizeof(refreshRate_c), getStringID(Lang::Id_DisplayRefreshRate), refreshRate_g);
 	}
 
