@@ -12,6 +12,7 @@ public:
 		clickableListItem->setClickListener([](u64 keys) { 
 			if ((keys & HidNpadButton_A) && PluginRunning) {
 				SetBuffers_save = 2;
+				if (!(Shared -> pluginActive)) (Shared -> SetBuffers) = 2;
 				if (Shared->expectedSetBuffers != -1) Shared->expectedSetBuffers = 2;
 				saveSettings();
 				tsl::goBack();
@@ -22,11 +23,60 @@ public:
 		});
 		list->addItem(clickableListItem);
 
-		if ((Shared -> API) == 3) {
+		if ((Shared -> API) == 0) {
+			auto *clickableListItemTriple = new tsl::elm::ListItem2(getStringID(Lang::Id_Triple));
+			clickableListItemTriple->setClickListener([](u64 keys) { 
+				if ((keys & HidNpadButton_A) && PluginRunning) {
+					SetBuffers_save = 3;
+					if (!(Shared -> pluginActive)) (Shared -> SetBuffers) = 3;
+					if (Shared->expectedSetBuffers != -1) Shared->expectedSetBuffers = 3;
+					saveSettings();
+					tsl::goBack();
+					tsl::goBack();
+					return true;
+				}
+				return false;
+			});
+			list->addItem(clickableListItemTriple);
+
+			auto *clickableListItemQuad = new tsl::elm::ListItem2(getStringID(Lang::Id_Quadruple));
+			clickableListItemQuad->setClickListener([](u64 keys) { 
+				if ((keys & HidNpadButton_A) && PluginRunning) {
+					SetBuffers_save = 4;
+					if (!(Shared -> pluginActive)) (Shared -> SetBuffers) = 4;
+					if (Shared->expectedSetBuffers != -1) Shared->expectedSetBuffers = 4;
+					saveSettings();
+					tsl::goBack();
+					tsl::goBack();
+					return true;
+				}
+				return false;
+			});
+			list->addItem(clickableListItemQuad);
+
+			if (SetBuffers_save != 0) {
+				auto *clickableListItemOff = new tsl::elm::ListItem2(getStringID(Lang::Id_Disabled));
+				clickableListItemOff->setClickListener([](u64 keys) { 
+					if ((keys & HidNpadButton_A) && PluginRunning) {
+						SetBuffers_save = 0;
+						if (!(Shared -> pluginActive)) (Shared -> SetBuffers) = 0;
+						if (Shared->expectedSetBuffers != -1) Shared->expectedSetBuffers = -1;
+						saveSettings();
+						tsl::goBack();
+						tsl::goBack();
+						return true;
+					}
+					return false;
+				});
+				list->addItem(clickableListItemOff);
+			}
+		}
+		else if ((Shared -> API) == 3) {
 			auto *clickableListItemv1 = new tsl::elm::ListItem2(getStringID(Lang::Id_Triple));
 			clickableListItemv1->setClickListener([](u64 keys) { 
 				if ((keys & HidNpadButton_A) && PluginRunning) {
 					SetBuffers_save = 3;
+					if (!(Shared -> pluginActive)) (Shared -> SetBuffers) = 3;
 					if (Shared->expectedSetBuffers != -1) Shared->expectedSetBuffers = 3;
 					saveSettings();
 					tsl::goBack();
@@ -198,16 +248,17 @@ public:
 				sprintf(lockInvalid, getStringID(Lang::Id_GameConfigFileNotFound), TID, BID);
 				size_t appControlDataSize = 0;
 				s32 appContentMetaStatusSize = 0;
-				NsApplicationControlData appControlData;
-				NsApplicationContentMetaStatus appContentMetaStatus[2];
+				NsApplicationControlData appControlData = {};
+				NsApplicationContentMetaStatus appContentMetaStatus[2] = {};
 				uint64_t base_tid = TID & ~0xFFF;
 				if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource::NsApplicationControlSource_Storage, base_tid, &appControlData, sizeof(NsApplicationControlData), &appControlDataSize)) 
-					&& R_SUCCEEDED(nsListApplicationContentMetaStatus(base_tid, 0, appContentMetaStatus, 2, &appContentMetaStatusSize))) {
+					&& R_SUCCEEDED(nsListApplicationContentMetaStatus(base_tid, 0, appContentMetaStatus, 2, &appContentMetaStatusSize))
+					&& appContentMetaStatusSize > 0) {
 						u32 index = 0;
 						if (appContentMetaStatusSize == 2 && appContentMetaStatus[1].meta_type == NcmContentMetaType_Patch) index = 1;
 						if (appContentMetaStatus[index].version != 0)
 							snprintf(lockVersionExpected, sizeof(lockVersionExpected), "%s | v%d/%d", appControlData.nacp.display_version, appContentMetaStatus[index].version / 65536, appContentMetaStatus[index].version);
-						else sprintf(lockVersionExpected, "%s | v0", appControlData.nacp.display_version);
+						else snprintf(lockVersionExpected, sizeof(lockVersionExpected), "%s | v0", appControlData.nacp.display_version);
 				}
 			}
 			else sprintf(lockInvalid, getStringID(Lang::Id_GameConfigError), configValid);
@@ -285,13 +336,15 @@ public:
 				case 3: {
 					list->addItem(new tsl::elm::CategoryHeader(getStringID(Lang::Id_GPUAPIInterfaceVulkan), false));
 
-					list->addItem(new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, s32 x, s32 y, s32 w, s32 h) {
-						
-						renderer->drawString(nvnBuffers, false, x, y+20, 20, renderer->a(0xFFFF));
+					if ((Shared -> Buffers) >= 2 && (Shared -> Buffers) <= 4) {
+						list->addItem(new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, s32 x, s32 y, s32 w, s32 h) {
 							
-					}), 40);
+							renderer->drawString(nvnBuffers, false, x, y+20, 20, renderer->a(0xFFFF));
+								
+						}), 40);
+					}
 
-					if ((Shared -> Buffers) >= 2) {
+					if ((Shared -> Buffers) >= 2 || !(Shared -> pluginActive)) {
 						auto *clickableListItem3 = new tsl::elm::MiniListItem(getStringID(Lang::Id_SetBuffering));
 						clickableListItem3->setClickListener([](u64 keys) { 
 							if ((keys & HidNpadButton_A) && PluginRunning) {
@@ -304,6 +357,43 @@ public:
 					}
 				}
 			}
+		}
+		else {
+			std::string buffMode = getStringID(Lang::Id_Off);
+			switch (SetBuffers_save) {
+				case 2:
+					buffMode = getStringID(Lang::Id_Double);
+					break;
+				case 3:
+					buffMode = getStringID(Lang::Id_Triple);
+					break;
+				case 4:
+					buffMode = getStringID(Lang::Id_Quadruple);
+					break;
+				case 5:
+					buffMode = getStringID(Lang::Id_TripleForce);
+					break;
+			}
+
+			auto *clickableSyncItem = new tsl::elm::MiniListItem(getStringID(Lang::Id_WindowSyncWait), ZeroSyncMode);
+			clickableSyncItem->setClickListener([](u64 keys) { 
+				if ((keys & HidNpadButton_A) && PluginRunning) {
+					tsl::changeTo<SyncMode>();
+					return true;
+				}
+				return false;
+			});
+			list->addItem(clickableSyncItem);
+
+			auto *clickableBuffItem = new tsl::elm::MiniListItem(getStringID(Lang::Id_SetBuffering), buffMode);
+			clickableBuffItem->setClickListener([](u64 keys) { 
+				if ((keys & HidNpadButton_A) && PluginRunning) {
+					tsl::changeTo<SetBuffers>();
+					return true;
+				}
+				return false;
+			});
+			list->addItem(clickableBuffItem);
 		}
 
 		list->addItem(new tsl::elm::CategoryHeader(getStringID(Lang::Id_FPSLockerPatches), false));

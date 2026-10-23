@@ -65,6 +65,7 @@ uint8_t* refreshRate_shared = 0;
 bool _isDocked = false;
 bool _def = true;
 bool PluginRunning = false;
+bool nxFpsBlockFound = false;
 bool state = false;
 bool closed = false;
 bool check = false;
@@ -1189,6 +1190,26 @@ void setForceEnglishLanguage(bool set) {
 		fwrite(&set, 1, 1, file);
 		fclose(file);
 	}
+}
+
+void loadSettingsToShared(const char* path) {
+	if (!Shared) return;
+	FILE* file_dat = fopen(path, "rb");
+	if (!file_dat) return;
+	uint8_t temp = 0;
+	if (fread(&temp, 1, 1, file_dat) == 1) {
+		(Shared -> FPSlocked) = temp;
+		(Shared -> FPSlockedDocked) = temp;
+	}
+	if (fread(&temp, 1, 1, file_dat) == 1)
+		(Shared -> ZeroSync) = temp;
+	if (fread(&temp, 1, 1, file_dat) == 1)
+		(Shared -> SetBuffers) = temp;
+	if (fread(&temp, 1, 1, file_dat) == 1)
+		(Shared -> forceSuspend) = (bool)temp;
+	if (fread(&temp, 1, 1, file_dat) == 1)
+		(Shared -> FPSlockedDocked) = temp;
+	fclose(file_dat);
 }
 
 bool saveSettings() {

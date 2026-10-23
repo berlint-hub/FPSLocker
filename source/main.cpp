@@ -551,7 +551,19 @@ public:
 				renderer->drawString(getStringID(Lang::Id_NXFPSIsNotRunning), false, x, y+70, 20, renderer->a(0xF33F));
 			}
 			else if (!(Shared -> pluginActive)) {
-				renderer->drawString(getStringID(Lang::Id_NXFPSIsRunningWaitingForFrame), false, x, y+20, 20, renderer->a(0xF33F));
+				const bool hasLiveFPS = (Shared -> FPS) > 0 || ((Shared -> FPSavg) > 0.0f && (Shared -> FPSavg) <= 240.0f);
+				if (!nxFpsBlockFound || hasLiveFPS) {
+					renderer->drawString(getStringID(Lang::Id_NXFPSIsNotRunning), false, x, y+20, 20, renderer->a(0xF33F));
+				}
+				else {
+					renderer->drawString(getStringID(Lang::Id_NXFPSIsRunningWaitingForFrame), false, x, y+20, 20, renderer->a(0xF33F));
+				}
+				renderer->drawString(FPSTarget_c, false, x, y+86, 20, renderer->a(0xFFFF));
+				if (hasLiveFPS) {
+					if (render100Above) renderer->drawString(PFPS_c, false, x+265, y+48, 50, renderer->a(0xFFFF));
+					else renderer->drawString(PFPS_c, false, x+290, y+48, 50, renderer->a(0xFFFF));
+					renderer->drawString("FPS", false, x+320, y+70, 20, renderer->a(0xFFFF));
+				}
 			}
 			else {
 				renderer->drawString(getStringID(Lang::Id_NXFPSIsRunning), false, x, y+20, 20, renderer->a(0xFFFF));
@@ -566,8 +578,8 @@ public:
 			}
 		}), 170);
 
-		if (PluginRunning && (Shared -> pluginActive)) {
-			pluginRanAtBoot = true;
+		if (PluginRunning) {
+			if (Shared -> pluginActive) pluginRanAtBoot = true;
 			if (entry_mode == ApmPerformanceMode_Normal) {
 				auto *clickableListItem = new tsl::elm::ListItem2(getStringID(Lang::Id_IncreaseFPSTarget));
 				clickableListItem->setClickListener([](u64 keys) { 
@@ -759,6 +771,9 @@ public:
 				}
 				else sprintf(FPSTarget_c, getStringID(Lang::Id_CustomFPSTarget), (entry_mode == ApmPerformanceMode_Normal) ? (Shared -> FPSlocked) : (Shared -> FPSlockedDocked));
 				uint8_t value = (Shared -> FPS);
+				if (!value && !(Shared -> pluginActive) && (Shared -> FPSavg) > 0.0f && (Shared -> FPSavg) <= 240.0f) {
+					value = (uint8_t)((Shared -> FPSavg) + 0.5f);
+				}
 				sprintf(PFPS_c, "%d", value);
 				if (value >= 100) render100Above = true;
 				else render100Above = false;
@@ -770,7 +785,7 @@ public:
 
 	// Called once every frame to handle inputs not handled by other UI elements
 	virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
-		refreshRate_g = *refreshRate_shared;
+		if (refreshRate_shared) refreshRate_g = *refreshRate_shared;
 		if (!isLite) {
 			smInitialize();
 			if (R_SUCCEEDED(apmInitialize())) {
@@ -891,26 +906,34 @@ public:
 			check = true;
 			
 			ptrdiff_t rel_offset = searchSharedMemoryBlock(base);
+			nxFpsBlockFound = (rel_offset > -1);
 			if (rel_offset > -1) {
 				Shared = (NxFpsSharedBlock*)(base + rel_offset);
 			}
+			else if (base) {
+				Shared = (NxFpsSharedBlock*)(base + 4);
+				memset(Shared, 0, sizeof(NxFpsSharedBlock));
+				Shared -> MAGIC = 0x465053;
+				Shared -> expectedSetBuffers = -1;
+			}
 
-			if (!PluginRunning) {
-				if (rel_offset > -1) {
-					pminfoInitialize();
-					pminfoGetProgramId(&TID, PID);
-					pminfoExit();
-					BID = getBID();
-					sprintf(patchPath, "sdmc:/SaltySD/plugins/FPSLocker/patches/%016lX/%016lX.bin", TID, BID);
-					sprintf(configPath, "sdmc:/SaltySD/plugins/FPSLocker/patches/%016lX/%016lX.yaml", TID, BID);
-					sprintf(savePath, "sdmc:/SaltySD/plugins/FPSLocker/%016lX.dat", TID);
+			if (!PluginRunning && Shared) {
+				pminfoInitialize();
+				pminfoGetProgramId(&TID, PID);
+				pminfoExit();
+				BID = getBID();
+				sprintf(patchPath, "sdmc:/SaltySD/plugins/FPSLocker/patches/%016lX/%016lX.bin", TID, BID);
+				sprintf(configPath, "sdmc:/SaltySD/plugins/FPSLocker/patches/%016lX/%016lX.yaml", TID, BID);
+				sprintf(savePath, "sdmc:/SaltySD/plugins/FPSLocker/%016lX.dat", TID);
+				if (!nxFpsBlockFound) {
+					loadSettingsToShared(savePath);
+				}
 
-					SetBuffers_save = (Shared -> SetBuffers);
-					forceSuspend_save = (Shared -> forceSuspend);
-					PluginRunning = true;
-					threadCreate(&t0, loopThread, NULL, NULL, 0x1000, 0x20, 0);
-					threadStart(&t0);
-				}		
+				SetBuffers_save = (Shared -> SetBuffers);
+				forceSuspend_save = (Shared -> forceSuspend);
+				PluginRunning = true;
+				threadCreate(&t0, loopThread, NULL, NULL, 0x1000, 0x20, 0);
+				threadStart(&t0);
 			}
 		
 		});
